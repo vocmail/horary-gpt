@@ -1,9 +1,6 @@
 from fastapi import FastAPI, Query
-from flatlib.chart import Chart
-from flatlib.datetime import Datetime
-from flatlib.geopos import GeoPos
-from flatlib.const import PLACIDUS
 from datetime import datetime
+from skyfield.api import load, Topos
 import pytz
 
 app = FastAPI()
@@ -15,22 +12,37 @@ def get_chart(
     longitude: float,
     timezone: str = "UTC"
 ):
-    now = datetime.now(pytz.timezone(timezone))
-    dt_str = now.strftime('%Y-%m-%d')
-    time_str = now.strftime('%H:%M')
+    # Get current time in given timezone
+    tz = pytz.timezone(timezone)
+    now = datetime.now(tz)
 
-    dt = Datetime(dt_str, time_str, now.strftime('%z'))
-    pos = GeoPos(str(latitude), str(longitude))
-    chart = Chart(dt, pos, hsys=PLACIDUS)
+    # Load ephemeris and observer location
+    eph = load('de421.bsp')
+    ts = load.timescale()
+    t = ts.from_datetime(now)
 
-    result = {
-        "ASC": str(chart.get("ASC")),
-        "Moon": str(chart.get("MOON")),
-        "Sun": str(chart.get("SUN")),
-        "Question": question,
-        "Time": now.isoformat(),
-        "Location": {"lat": latitude, "lon": longitude},
-        "Planets": {obj: str(chart.get(obj)) for obj in chart.objects}
+    observer = Topos(latitude_degrees=latitude, longitude_degrees=longitude)
+
+    # Get planet positions
+    planets = ['sun', 'moon', 'mercury', 'venus', 'mars', 'jupiter', 'saturn']
+    positions = {}
+
+    for planet in planets:
+        ast_obj = eph[planet]
+        ast = eph['earth'] + observer
+        ast_pos = ast.at(t).observe(ast_obj).apparent()
+        alt, az, distance = ast_pos.altaz()
+        ra, dec, _ = ast_pos.radec()
+        positions[planet.capitalize()] = {
+            'RA': ra.hours,
+            'Dec': dec.degrees,
+            'Altitude': alt.degrees,
+            'Azimuth': az.degrees
+        }
+
+    return {
+        "question": question,
+        "datetime": now.isoformat(),
+        "location": {"latitude": latitude, "longitude": longitude},
+        "positions": positions
     }
-
-    return result
