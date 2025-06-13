@@ -16,7 +16,7 @@ def get_chart(
     tz = pytz.timezone(timezone)
     now = datetime.now(tz)
 
-    ephemeris_path = os.path.join(os.path.dirname(__file__), "de421.bsp")
+    ephemeris_path = "de421.bsp"
     eph = load(ephemeris_path)
     ts = load.timescale()
     t = ts.from_datetime(now)
