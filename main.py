@@ -1,7 +1,8 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI
 from datetime import datetime
 from skyfield.api import load, Topos
 import pytz
+import os
 
 app = FastAPI()
 
@@ -12,27 +13,22 @@ def get_chart(
     longitude: float,
     timezone: str = "UTC"
 ):
-    # Get current time in given timezone
     tz = pytz.timezone(timezone)
     now = datetime.now(tz)
 
-    # Load ephemeris and observer location
-    eph = load('de421.bsp')
+    ephemeris_path = os.path.join(os.path.dirname(__file__), "de421.bsp")
+    eph = load(ephemeris_path)
     ts = load.timescale()
     t = ts.from_datetime(now)
-
     observer = Topos(latitude_degrees=latitude, longitude_degrees=longitude)
 
-    # Get planet positions
-    planets = ['sun', 'moon', 'mercury', 'venus', 'mars', 'jupiter', 'saturn']
     positions = {}
-
-    for planet in planets:
+    for planet in ['sun', 'moon', 'mercury', 'venus', 'mars', 'jupiter', 'saturn']:
         ast_obj = eph[planet]
-        ast = eph['earth'] + observer
-        ast_pos = ast.at(t).observe(ast_obj).apparent()
-        alt, az, distance = ast_pos.altaz()
-        ra, dec, _ = ast_pos.radec()
+        obs = eph['earth'] + observer
+        ast = obs.at(t).observe(ast_obj).apparent()
+        alt, az, distance = ast.altaz()
+        ra, dec, _ = ast.radec()
         positions[planet.capitalize()] = {
             'RA': ra.hours,
             'Dec': dec.degrees,
