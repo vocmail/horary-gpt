@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from datetime import datetime
 import swisseph as swe
 import pytz
+import os
 
 app = FastAPI()
 
@@ -45,7 +46,7 @@ def get_chart(question: str, latitude: float, longitude: float, timezone: str = 
     now = datetime.now(tz)
 
     jd = swe.julday(now.year, now.month, now.day, now.hour + now.minute / 60.0)
-    swe.set_ephe_path(".")
+    swe.set_ephe_path(".")  # Looks in current folder for sepl_18.se1
 
     planet_positions = {}
     for name, code in PLANETS.items():
@@ -56,8 +57,11 @@ def get_chart(question: str, latitude: float, longitude: float, timezone: str = 
         except:
             planet_positions[name] = "Error"
 
-    house_cusps = swe.houses(jd, latitude, longitude)[0]
-    houses = {f"House {i+1}": round(deg, 2) for i, deg in enumerate(house_cusps)}
+    try:
+        house_cusps = swe.houses(jd, latitude, longitude)[0]
+        houses = {f"House {i+1}": round(deg, 2) for i, deg in enumerate(house_cusps)}
+    except:
+        houses = {}
 
     aspects = calculate_aspects(planet_positions)
 
