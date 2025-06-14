@@ -1,79 +1,104 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 import swisseph as swe
 import pytz
 import os
+import math
 
 app = FastAPI()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Load Swiss Ephemeris data file
+EPHE_PATH = os.path.dirname(os.path.abspath(__file__))
+swe.set_ephe_path(EPHE_PATH)
+
 PLANETS = {
-    'Sun': swe.SUN,
-    'Moon': swe.MOON,
-    'Mercury': swe.MERCURY,
-    'Venus': swe.VENUS,
-    'Mars': swe.MARS,
-    'Jupiter': swe.JUPITER,
-    'Saturn': swe.SATURN
+    "Sun": swe.SUN,
+    "Moon": swe.MOON,
+    "Mercury": swe.MERCURY,
+    "Venus": swe.VENUS,
+    "Mars": swe.MARS,
+    "Jupiter": swe.JUPITER,
+    "Saturn": swe.SATURN
 }
 
-ASPECTS = {
-    'Conjunction': 0,
-    'Sextile': 60,
-    'Square': 90,
-    'Trine': 120,
-    'Opposition': 180
-}
+def calculate_houses(jd_ut, lat, lon):
+    """Calculates Placidus house cusps and Asc/MC"""
+    hsys = b'P'  # Placidus
+    try:
+        cusps, ascmc = swe.houses(jd_ut, lat, lon, hsys)
+        houses = {}
+        for i in range(12):
+            houses[f"House {i+1}"] = round(cusps[i], 2)
+        houses["Ascendant"] = round(ascmc[0], 2)
+        houses["Midheaven"] = round(ascmc[1], 2)
+        return houses
+    except Exception as e:
+        return {"error": str(e)}
 
 def calculate_aspects(planet_positions):
-    results = []
-    names = list(planet_positions.keys())
-    for i in range(len(names)):
-        for j in range(i + 1, len(names)):
-            p1, p2 = names[i], names[j]
-            if isinstance(planet_positions[p1], (int, float)) and isinstance(planet_positions[p2], (int, float)):
-    angle = abs(planet_positions[p1] - planet_positions[p2]) % 360
-else:
-    continue
-
-            for name, exact in ASPECTS.items():
-                if abs(angle - exact) <= 6:
-                    results.append({
-                        "between": f"{p1} and {p2}",
-                        "aspect": name,
-                        "angle": round(angle, 2)
-                    })
-    return results
+    aspects = []
+    for i, p1 in enumerate(planet_positions):
+        for j, p2 in enumerate(planet_positions):
+            if i >= j:
+                continue
+            if (
+                isinstance(planet_positions[p1], (int, float))
+                and isinstance(planet_positions[p2], (int, float))
+            ):
+                angle = abs(planet_positions[p1] - planet_positions[p2]) % 360
+                for asp_angle in [0, 60, 90, 120, 180]:
+                    orb = 8  # degrees of allowable difference
+                    if abs(angle - asp_angle) <= orb:
+                        aspects.append({
+                            "between": f"{p1} and {p2}",
+                            "aspect": f"{asp_angle}°",
+                            "angle": round(angle, 2)
+                        })
+    return aspects
 
 @app.get("/get_horary_chart")
-def get_chart(question: str, latitude: float, longitude: float, timezone: str = "UTC"):
-    tz = pytz.timezone(timezone)
-    now = datetime.now(tz)
-
-    jd = swe.julday(now.year, now.month, now.day, now.hour + now.minute / 60.0)
-    swe.set_ephe_path(".")  # Looks in current folder for sepl_18.se1
-
-    planet_positions = {}
-    for name, code in PLANETS.items():
-        try:
-            result = swe.calc_ut(jd, code)
-            if len(result) >= 1:
-                planet_positions[name] = result[0]
-        except:
-            planet_positions[name] = "Error"
-
+def get_chart(
+    question: str = Query(...),
+    latitude: float = Query(...),
+    longitude: float = Query(...),
+    timezone: str = Query("UTC")
+):
     try:
-        house_cusps = swe.houses(jd, latitude, longitude)[0]
-        houses = {f"House {i+1}": round(deg, 2) for i, deg in enumerate(house_cusps)}
-    except:
-        houses = {}
+        # Current time
+        now = datetime.now(pytz.timezone(timezone))
+        jd = swe.julday(now.year, now.month, now.day, now.hour + now.minute / 60 + now.second / 3600)
 
-    aspects = calculate_aspects(planet_positions)
+        # Planet positions
+        planet_positions = {}
+        for name, code in PLANETS.items():
+            try:
+                lon, lat, dist = swe.calc_ut(jd, code)[0:3]
+                planet_positions[name] = round(lon, 2)
+            except:
+                planet_positions[name] = "Error"
 
-    return {
-        "question": question,
-        "datetime": now.isoformat(),
-        "location": {"latitude": latitude, "longitude": longitude},
-        "planets": planet_positions,
-        "houses": houses,
-        "aspects": aspects
-    }
+        # Houses
+        houses = calculate_houses(jd, latitude, longitude)
+
+        # Aspects
+        aspects = calculate_aspects(planet_positions)
+
+        return {
+            "question": question,
+            "datetime": now.isoformat(),
+            "location": {"latitude": latitude, "longitude": longitude},
+            "planets": planet_positions,
+            "houses": houses,
+            "aspects": aspects
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
