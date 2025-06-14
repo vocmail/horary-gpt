@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from datetime import datetime
 import swisseph as swe
 import pytz
-import math
 
 app = FastAPI()
 
@@ -26,15 +25,13 @@ ASPECTS = {
 
 def calculate_aspects(planet_positions):
     results = []
-    planet_names = list(planet_positions.keys())
-    for i in range(len(planet_names)):
-        for j in range(i + 1, len(planet_names)):
-            p1 = planet_names[i]
-            p2 = planet_names[j]
+    names = list(planet_positions.keys())
+    for i in range(len(names)):
+        for j in range(i + 1, len(names)):
+            p1, p2 = names[i], names[j]
             angle = abs(planet_positions[p1] - planet_positions[p2]) % 360
             for name, exact in ASPECTS.items():
-                orb = 6
-                if abs(angle - exact) <= orb:
+                if abs(angle - exact) <= 6:
                     results.append({
                         "between": f"{p1} and {p2}",
                         "aspect": name,
@@ -47,16 +44,20 @@ def get_chart(question: str, latitude: float, longitude: float, timezone: str = 
     tz = pytz.timezone(timezone)
     now = datetime.now(tz)
 
-    jd = swe.julday(now.year, now.month, now.day, now.hour + now.minute / 60)
-    swe.set_topo(longitude, latitude, 0)
+    jd = swe.julday(now.year, now.month, now.day, now.hour + now.minute / 60.0)
+    swe.set_ephe_path(".")
 
     planet_positions = {}
     for name, code in PLANETS.items():
-        lon, lat, dist = swe.calc_ut(jd, code)[0:3]
-        planet_positions[name] = lon
+        try:
+            result = swe.calc_ut(jd, code)
+            if len(result) >= 1:
+                planet_positions[name] = result[0]
+        except:
+            planet_positions[name] = "Error"
 
-    houses = swe.houses(jd, latitude, longitude)[0]
-    house_data = {f"House {i+1}": round(houses[i], 2) for i in range(12)}
+    house_cusps = swe.houses(jd, latitude, longitude)[0]
+    houses = {f"House {i+1}": round(deg, 2) for i, deg in enumerate(house_cusps)}
 
     aspects = calculate_aspects(planet_positions)
 
@@ -65,6 +66,6 @@ def get_chart(question: str, latitude: float, longitude: float, timezone: str = 
         "datetime": now.isoformat(),
         "location": {"latitude": latitude, "longitude": longitude},
         "planets": planet_positions,
-        "houses": house_data,
+        "houses": houses,
         "aspects": aspects
     }
