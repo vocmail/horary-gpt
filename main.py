@@ -30,7 +30,11 @@ def calculate_aspects(planet_positions):
     for i in range(len(names)):
         for j in range(i + 1, len(names)):
             p1, p2 = names[i], names[j]
-            angle = abs(planet_positions[p1] - planet_positions[p2]) % 360
+            if isinstance(planet_positions[p1], (int, float)) and isinstance(planet_positions[p2], (int, float)):
+    angle = abs(planet_positions[p1] - planet_positions[p2]) % 360
+else:
+    continue
+
             for name, exact in ASPECTS.items():
                 if abs(angle - exact) <= 6:
                     results.append({
